@@ -143,6 +143,25 @@ class Signal:
                 stratNameList.append(stratName)
         return stratNameList
 
+    def beforeMESignal(self, df, colName, BDList):
+        stratNameList = []
+
+        return stratNameList
+
+    def afterMESignal(self, df, colName, BDList):
+        stratNameList = []
+        return  stratNameList
+
+    def beforeIMMSignal(self, df, colName, BDList):
+        stratNameList = []
+        return stratNameList
+
+    def afterIMMSignal(self, df, colName, BDList):
+        stratNameList = []
+        return stratNameList
+
+
+
 if __name__ == "__main__":
     current_path = Path.cwd()
     root = current_path.parent
