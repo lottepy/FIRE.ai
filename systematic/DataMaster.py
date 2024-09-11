@@ -55,13 +55,16 @@ class DataMaster:
 
 if __name__ == '__main__':
     fromDate = date(2010,1,1)
-    toDate = date.today()
     dm = DataMaster()
+    ccy = 'TWD'
     df = dm.getData(
-        tickers=['USDKRW'],
-        datasetName='FXFORWARDPOINTS_IMM',
+        tickers=[
+            f"FX Forward {ccy.upper}/USD 1m", f"FX Forward {ccy.upper}/USD 3m"
+        ],
+        datasetName='FXFORWARDPOINTS_V2_PREMIUM',
         datasetArgs={
             'start': fromDate,
+            'pricingLocation': 'HKG'
         },
         multiCol=True
     )
