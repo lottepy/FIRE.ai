@@ -100,3 +100,28 @@ class TechnicalIndicator:
         df[indicatorName] = np.where(df[colName1] < df[colName2], 1, 0)
         df[indicatorName] *= df[f"{indicatorName} Prev"]
         return indicatorName
+
+    def monthSeasonality(self, df, longMonList, shortMonList):
+        """
+        Month seasonality is a trading signal that occurs when the month is in the longMonList.
+        """
+        indicatorName = 'Month Seasonality'
+        df.index = pd.to_datetime(df.index)
+        df[indicatorName] = np.where(df.index.month.isin(longMonList), 1, np.where(df.index.month.isin(shortMonList), -1, 0))
+        return indicatorName
+
+
+    def sharpe(self, df, colName, win):
+        indicatorName = f'{colName} {win}Sharpe'
+        df[indicatorName] = df[colName].pct_change().rolling(window=win).mean() / df[colName].pct_change().rolling(window=win).std() * 252 ** 0.5
+        return indicatorName
+
+    def MA(self, df, colName, win, ema=False):
+        indicatorName = f'{colName} {win}'
+        if not ema:
+            indicatorName += "SMA"
+            df[indicatorName] = df[colName].rolling(window=win).mean()
+        else:
+            indicatorName += "EMA"
+            df[indicatorName] = df[colName].ewm(span=win, adjust=False).mean()
+        return indicatorName

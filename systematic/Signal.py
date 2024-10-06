@@ -1,3 +1,4 @@
+from functools import partial
 from symtable import Class
 
 import numpy as np
@@ -7,13 +8,18 @@ from pathlib import Path
 from datetime import date, datetime
 
 import matplotlib.pyplot as plt
-from pandas.errors import PerformanceWarning
+from babel.dates import parse_date
+from pandas.errors import PerformanceWarning, SettingWithCopyWarning
 
 from TechnicalIndicator import TechnicalIndicator
 from DataMaster import DataMaster
 import warnings
+
+from systematic.Metrics import Metrics
+
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.simplefilter(action='ignore', category=PerformanceWarning)
+warnings.simplefilter(action='ignore', category=SettingWithCopyWarning)
 
 class Signal:
     def __init__(self):
@@ -28,7 +34,7 @@ class Signal:
         ti = TechnicalIndicator()
         for rsiInf in rsiInfList:
             for rsiSup in rsiSupList:
-                stratName = f'enterRSI{rsiInf}-{rsiSup}'
+                stratName = f'enterRSI {rsiCol} {rsiInf}-{rsiSup}'
                 df[f'Inf{rsiInf}'] = rsiInf
                 df[f'Sup{rsiSup}'] = rsiSup
                 # Oversold
@@ -42,16 +48,19 @@ class Signal:
                 rsi_sup_cu = ti.crossunder(df, rsiCol, f'Sup{rsiSup}')
 
                 # Sell: From Sell Trend till Oversold
-                df[f"{stratName} Sell"] = - df[rsi_inf_cu] + df[rsi_inf_co]
-                mask = (df[f"{stratName} Sell"] == -1).cumsum() - (df[f"{stratName} Sell"] == 1).cumsum()
-                df[f"{stratName} Sell"] = np.where((df[f"{stratName} Sell"] == 0) & (mask == 0), -1,
-                                                  df[f"{stratName} Sell"])
+                df[f"{stratName} SellFlag"] = - df[rsi_inf_cu] + df[rsi_inf_co]
+                mask = (df[f"{stratName} SellFlag"] == -1).cumsum() - (df[f"{stratName} SellFlag"] == 1).cumsum()
+                df[f"{stratName} Sell"] = np.where((df[f"{stratName} SellFlag"] == 0) & (mask == 0), -1,
+                                                  df[f"{stratName} SellFlag"])
+                df[f"{stratName} Sell"] = df[f"{stratName} Sell"].replace(1, 0)
 
                 # Buy: From Buy Trend till Overbought
-                df[f"{stratName} Buy"] = df[rsi_sup_co] - df[rsi_sup_cu]
-                mask = (df[f"{stratName} Buy"] == 1).cumsum() - (df[f"{stratName} Buy"] == -1).cumsum()
-                df[f"{stratName} Buy"] = np.where((df[f"{stratName} Buy"] == 0) & (mask == 0), 1, df[f"{stratName} Buy"])
+                df[f"{stratName} BuyFlag"] = df[rsi_sup_co] - df[rsi_sup_cu]
+                mask = (df[f"{stratName} BuyFlag"] == 1).cumsum() - (df[f"{stratName} BuyFlag"] == -1).cumsum()
+                df[f"{stratName} Buy"] = np.where((df[f"{stratName} BuyFlag"] == 0) & (mask > 0), 1, df[f"{stratName} BuyFlag"])
+                df[f"{stratName} Buy"] = df[f"{stratName} Buy"].replace(-1, 0)
                 df[stratName] = df[f"{stratName} Sell"] + df[f"{stratName} Buy"]
+                df.drop(columns=[f'Inf{rsiInf}', f'Sup{rsiSup}', f"{stratName} SellFlag", f"{stratName} BuyFlag"], inplace=True)
                 stratNameList.append(stratName)
         return stratNameList
     
@@ -65,7 +74,7 @@ class Signal:
                     for sellStop in sellStopList:
                         df["Buy Stop"] = buyStop
                         df["Sell Stop"] = sellStop
-                        stratName = f'exitRSI Buy{rsiInf}-{buyStop} Sell{rsiSup}-{sellStop}'
+                        stratName = f'exitRSI {rsiCol} Buy{rsiInf}-{buyStop} Sell{rsiSup}-{sellStop}'
                         df[f'Inf{rsiInf}'] = rsiInf
                         df[f'Sup{rsiSup}'] = rsiSup
 
@@ -91,7 +100,7 @@ class Signal:
                         else:
                             df[stratName] = np.where(df[f"{stratName} Sell"] < 0, -1,
                                                        np.where(df[f"{stratName} Buy"] > 0, 1, 0))
-                stratNameList.append(stratName)
+                        stratNameList.append(stratName)
         return stratNameList
     
     def enterRSIADXSignal(self, df, rsiCol, rsiInfList, rsiSupList, colName, colHigh, colLow, adxWinList, adxThreshList):
@@ -142,6 +151,70 @@ class Signal:
                     df[stratName] = df[ent] - df[exi]
                 else:
                     df[stratName] = df[ent] + df[exi]
+                stratNameList.append(stratName)
+        return stratNameList
+
+    def DiveRSISignal(self, df, rsiCol):
+        stratNameList = []
+        stratName = f"DiveRSI {rsiCol}"
+        df[f"{rsiCol} Diff"] = df[rsiCol].diff()
+        df[stratName] = np.where(df[f"{rsiCol} Diff"] < 0, -1, np.where(df[f"{rsiCol} Diff"] > 0, 1, 0))
+        df[stratName] = np.where(pd.isna(df[rsiCol]), np.nan, df[stratName])
+        stratNameList.append(stratName)
+        return stratNameList
+
+    def DiveEnterRSISignal(self, df, rsiCol, rsiInfList, rsiSupList):
+        stratNameList = self.enterRSISignal(df, rsiCol, rsiInfList, rsiSupList)
+        diveRSIStrat = self.DiveRSISignal(df, rsiCol)[0]
+        for stratName in stratNameList:
+            df[stratName] = np.where(df[stratName] >0, df[stratName] * df[diveRSIStrat], np.where(df[stratName] < 0, -df[stratName] * df[diveRSIStrat], df[diveRSIStrat]))
+        return stratNameList
+
+    def RelativeEnterRSI(self, df, rsiCol, rsiInfList, rsiSupList, winList):
+        # Calculate the rolling cumulative maximum
+        win = 60
+
+
+        stratNameList = []
+        ti = TechnicalIndicator()
+        for rsiInf in rsiInfList:
+            for rsiSup in rsiSupList:
+                stratName = f'enterRSI {rsiCol} {rsiInf}-{rsiSup}'
+                df[f'Inf{rsiInf}'] = rsiInf
+                df[f'Sup{rsiSup}'] = rsiSup
+                # Oversold
+                rsi_inf_co = ti.crossover(df, rsiCol, f'Inf{rsiInf}')
+                # Trend to sell
+                rsi_inf_cu = ti.crossunder(df, rsiCol, f'Inf{rsiInf}')
+
+                # Trend to buy
+                rsi_sup_co = ti.crossover(df, rsiCol, f'Sup{rsiSup}')
+                # Overbought
+                rsi_sup_cu = ti.crossunder(df, rsiCol, f'Sup{rsiSup}')
+
+                # Sell: From Sell Trend till Oversold
+                df[f"{stratName} SellFlag"] = - df[rsi_inf_cu] + df[rsi_inf_co]
+                mask = (df[f"{stratName} SellFlag"] == -1).cumsum() - (df[f"{stratName} SellFlag"] == 1).cumsum()
+                df[f"{stratName} Sell"] = np.where((df[f"{stratName} SellFlag"] == 0) & (mask == 0), -1,
+                                                   df[f"{stratName} SellFlag"])
+                df[f"{stratName} Sell"] = df[f"{stratName} Sell"].replace(1, 0)
+                # Relative low
+                df[f'{rsiCol} {win}RollMim'] = df[rsiCol].rolling(window=win, min_periods=1).min()
+                rsi_co = ti.crossunder(df, rsiCol, f'{rsiCol} {win}RollMin')
+
+                # Buy: From Buy Trend till Overbought
+                df[f"{stratName} BuyFlag"] = df[rsi_sup_co] - df[rsi_sup_cu]
+                mask = (df[f"{stratName} BuyFlag"] == 1).cumsum() - (df[f"{stratName} BuyFlag"] == -1).cumsum()
+                df[f"{stratName} Buy"] = np.where((df[f"{stratName} BuyFlag"] == 0) & (mask > 0), 1,
+                                                  df[f"{stratName} BuyFlag"])
+                df[f"{stratName} Buy"] = df[f"{stratName} Buy"].replace(-1, 0)
+                # Relative max
+                df[f'{rsiCol} {win}RollMax'] = df[rsiCol].rolling(window=win, min_periods=1).max()
+                rsi_co = ti.crossover(df, rsiCol, f'{rsiCol} {win}RollMax')
+
+                df[stratName] = df[f"{stratName} Sell"] + df[f"{stratName} Buy"]
+                df.drop(columns=[f'Inf{rsiInf}', f'Sup{rsiSup}', f"{stratName} SellFlag", f"{stratName} BuyFlag"],
+                        inplace=True)
                 stratNameList.append(stratName)
         return stratNameList
 
@@ -247,15 +320,29 @@ class Signal:
         # df = df.merge(imm, on='date', how='outer')
         return stratNameList
 
-
+    def AbsRtnRV(self, df, colName1, colName2, winList1, winList2, momentum=True):
+        stratNameList = []
+        for win1 in winList1:
+            for win2 in winList2:
+                stratName = f"Abs {colName1}{win1} {colName2}{win2} Mmt{momentum}"
+                if momentum:
+                    df[stratName] = np.where(df[colName1].pct_change(win1) > df[colName2].pct_change(win2), 1, -1)
+                else:
+                    df[stratName] = np.where(df[colName1].pct_change(win1) > df[colName2].pct_change(win2), -1, 1)
+                df[stratName] = np.where((pd.isna(df[colName1].pct_change(win1))) | (pd.isna(df[colName2].pct_change(win2))), np.nan, df[stratName])
+                stratNameList.append(stratName)
+        return stratNameList
 
 if __name__ == "__main__":
     # current_path = Path.cwd()
     # root = current_path.parent
     # df = pd.read_csv(os.path.join(root, 'data/raw/ndx-raw.csv'), index_col="Date" ,parse_dates=True)
     # df.loc[: , ["NDX Index", "NDX Index High", "NDX Index Low"]] = df[[ "NDX Index", "NDX Index High", "NDX Index Low"]].shift(1)
+    # df.index.name = 'date'
     #
     # ti = TechnicalIndicator()
+    # me = Metrics()
+    # si = Signal()
     # ccy = 'KRW'
     # _max = 0
     # _maxName = ""
@@ -263,31 +350,23 @@ if __name__ == "__main__":
     #     rsi = ti.RSI(df, f'NDX Index', w, method='EMA')
     #     # adx = ti.ADX(df, 'NDX Index', 'NDX Index High', 'NDX Index Low', 14)
     #
-    #     si = Signal()
+    #
     #     # stratNameList = si.exitRSISignal(df, rsi,range(5,20,2), range(70, 80, 2), [65, 70, 75], [35, 30, 25], momentum=True)
     #     # stratNameList = si.exitRSISignal(df, rsi,[10], [75], [75], [25])
-    #     stratNameList = si.enterRSISignal(df, rsi,[10], [75])
-    #     # stratNameList = si.exitRSIADXSignal(df, rsi, [42], [68], 'NDX Index',
-    #     #                                  'NDX Index High', 'NDX Index Low', [14],
-    #     #                                  [30])
+    #     # stratNameList = si.enterRSISignal(df, rsi,[10], [75])
+    #     stratNameList = si.enterRSIADXSignal(df, rsi, [42], [68], 'NDX Index',
+    #                                      'NDX Index High', 'NDX Index Low', [14],
+    #                                      [30])
     #
     #     for stratName in stratNameList:
-    #         df[f"{ccy} Curncy Ret"] = df[f"{ccy} Curncy"].pct_change()
-    #         df[f"{stratName} Ret"] = df[stratName].shift(1) * df[f"{ccy} Curncy Ret"]
-    #         df[f"{stratName} CumRet"] = df[f"{stratName} Ret"].cumsum()
-    #         sharpe = df[f"{stratName} Ret"].mean() / df[f"{stratName} Ret"].std() * 252**0.5
-    #         print(stratName, sharpe, df[f"{stratName} CumRet"].iloc[-1] * 1e4)
-    #         if abs(sharpe) > _max:
-    #             _max = abs(sharpe)
-    #             _maxName = stratName + f" rsi{w}"
-    #         df[f"{stratName} CumRet"].plot()
-    #         plt.show()
-    # print(_maxName, _max)
+    #         metrics = me.calcAllMetrics(df, 'KRW Curncy', stratName)
+    #         print(metrics['Sharpe'])
+    # # print(_maxName, _max)
 
     current_path = Path.cwd()
     root = current_path.parent
     if os.path.exists(os.path.join(root, 'data/raw/twd-points.csv')):
-        df = pd.read_csv(os.path.join(root, 'data/raw/twd-points.csv'))
+        df = pd.read_csv(os.path.join(root, 'data/raw/twd-points.csv'), parse_dates=['date'])
     else:
         fromDate = date(2010, 1, 1)
         dm = DataMaster()
@@ -324,8 +403,22 @@ if __name__ == "__main__":
         current_path = Path.cwd()
         root = current_path.parent
         df.to_csv(os.path.join(root, 'data/raw/twd-points.csv'))
+
+    df.index = pd.to_datetime(df.index)
+    df.sort_index(inplace=True)
+    df.fillna(method='ffill')
+
     # %%
     si = Signal()
-    beforeIMM = si.beforeIMMSignal(df, ccy='TWD', winList=[10], momentum=True)
-    afterIMM = si.afterIMMSignal(df, ccy='TWD', winList=[10], momentum=False)
+    ti = TechnicalIndicator()
+    me = Metrics()
+    # beforeIMM = si.beforeIMMSignal(df, ccy='TWD', winList=[10], momentum=True)
+    # afterIMM = si.afterIMMSignal(df, ccy='TWD', winList=[10], momentum=False)
+    rsi = ti.RSI(df, "spot", 14, method='EMA')
+    diveStratList = si.DiveEnterRSISignal(df, rsi, range(15,45,5), range(55,90,5))
+    # diveStratList = si.enterRSISignal(df, rsi, range(15,45,5), range(55,90,5))
+    for s in diveStratList:
+        metrics = me.calcAllMetrics(df, "spot", s)
+        print(metrics['Sharpe'], metrics['MDDVol'], metrics['Hit'], metrics['Active'])
+
 

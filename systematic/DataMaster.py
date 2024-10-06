@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+
+import pandas as pd
 from gs_quant.session import GsSession, Environment
 from gs_quant.data import Dataset
 import config
@@ -6,6 +8,7 @@ from datetime import date, datetime
 
 from config import clientId, clientSecret
 
+stampToDate = lambda x: datetime.strptime(str(x), "%Y-%M-%d %H:%M:%S").date()
 
 @dataclass
 class DataMaster:
@@ -51,6 +54,18 @@ class DataMaster:
         else:
             ds= Dataset(datasetName)
             df = ds.get_data(**datasetArgs)
+        try:
+            if datasetName == 'FXFORWARDPONTS_V2_PREMIUM':
+                pass
+                # df = df.reset_index()
+                # df['DC'] = [(stampToDate(r.settlementDate) - stampToDate(r.date)).days - 2 for i,r in df.iterrows()]
+                # df = df.set_index('date')
+                # df = pd.pivot_table(df, values = ['fwdPoints', 'DC'], columns=['assetId'], index=['date'])
+            else:
+                pass
+        except Exception as e:
+            print(e)
+            print(f"Check {datasetName}/connect")
         return df
 
 if __name__ == '__main__':
