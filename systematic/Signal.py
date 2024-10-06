@@ -20,10 +20,38 @@ from systematic.Metrics import Metrics
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.simplefilter(action='ignore', category=PerformanceWarning)
 warnings.simplefilter(action='ignore', category=SettingWithCopyWarning)
+warnings.simplefilter(action='ignore', category=RuntimeWarning)
 
 class Signal:
     def __init__(self):
         pass
+
+    def RSITrendSignal(self, df, rsiCol, rsiEnterList, rsiExitList, direction=1):
+        stratNameList = []
+        ti = TechnicalIndicator()
+        for rsiEnt in rsiEnterList:
+            for rsiExi in rsiExitList:
+                stratName = f'RSITrend {rsiCol} {rsiEnt}-{rsiExi}'
+                df[f'RSI{rsiEnt}'] = rsiEnt
+                df[f'RSI{rsiExi}'] = rsiExi
+                # Oversold / overbot
+                rsi_co = ti.crossover(df, rsiCol, f'RSI{rsiEnt}')
+                # Trend to sell / buy
+                rsi_cu = ti.crossunder(df, rsiCol, f'RSI{rsiExi}')
+
+                # From Trend till Oversold / overbot
+                df[f"{stratName} Flag"] = - df[rsi_cu] + df[rsi_co]
+                mask = (df[f"{stratName} Flag"] == direction).cumsum() - (df[f"{stratName} Flag"] == -direction).cumsum()
+                if direction == -1:
+                    df[f"{stratName}"] = np.where((df[f"{stratName} Flag"] == 0) & (mask == 0), -1,
+                                                      df[f"{stratName} Flag"])
+                    df[f"{stratName}"] = df[f"{stratName}"].replace(1, 0)
+                else:
+                    df[f"{stratName}"] = np.where((df[f"{stratName} Flag"] == 0) & (mask > 0), 1,
+                                                      df[f"{stratName} Flag"])
+                    df[f"{stratName}"] = df[f"{stratName}"].replace(-1, 0)
+                stratNameList.append(stratName)
+        return stratNameList
 
     def enterRSISignal(self, df, rsiCol, rsiInfList, rsiSupList):
         """
@@ -415,8 +443,9 @@ if __name__ == "__main__":
     # beforeIMM = si.beforeIMMSignal(df, ccy='TWD', winList=[10], momentum=True)
     # afterIMM = si.afterIMMSignal(df, ccy='TWD', winList=[10], momentum=False)
     rsi = ti.RSI(df, "spot", 14, method='EMA')
-    diveStratList = si.DiveEnterRSISignal(df, rsi, range(15,45,5), range(55,90,5))
+    # diveStratList = si.DiveEnterRSISignal(df, rsi, range(15,45,5), range(55,90,5))
     # diveStratList = si.enterRSISignal(df, rsi, range(15,45,5), range(55,90,5))
+    diveStratList = si.RSITrendSignal(df, rsi, range(15,45,5), range(5,50,5), direction=-1)
     for s in diveStratList:
         metrics = me.calcAllMetrics(df, "spot", s)
         print(metrics['Sharpe'], metrics['MDDVol'], metrics['Hit'], metrics['Active'])
