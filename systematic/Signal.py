@@ -13,6 +13,7 @@ from pandas.errors import PerformanceWarning, SettingWithCopyWarning
 
 from TechnicalIndicator import TechnicalIndicator
 from DataMaster import DataMaster
+from utils import sign
 import warnings
 
 from systematic.Metrics import Metrics
@@ -31,7 +32,7 @@ class Signal:
         ti = TechnicalIndicator()
         for rsiEnt in rsiEnterList:
             for rsiExi in rsiExitList:
-                stratName = f'RSITrend {rsiCol} {rsiEnt}-{rsiExi}'
+                stratName = f"RSITrend{'Buy' if direction == 1 else 'Sell'} {rsiCol} {rsiEnt}-{rsiExi}"
                 df[f'RSI{rsiEnt}'] = rsiEnt
                 df[f'RSI{rsiExi}'] = rsiExi
                 # Oversold / overbot
@@ -41,14 +42,22 @@ class Signal:
 
                 # From Trend till Oversold / overbot
                 df[f"{stratName} Flag"] = - df[rsi_cu] + df[rsi_co]
-                mask = (df[f"{stratName} Flag"] == direction).cumsum() - (df[f"{stratName} Flag"] == -direction).cumsum()
+                df[f"{stratName} Flag Ffill"] = df[f"{stratName} Flag"]
+                df.loc[df.index[0], f"{stratName} Flag Ffill"] = np.nan
+                df[f"{stratName} Flag Ffill"] = df[f"{stratName} Flag Ffill"].replace(to_replace=0, method='ffill')
+                df[f"{stratName} Flag Final"] = df[f"{stratName} Flag"] + df[f"{stratName} Flag Ffill"]
+
                 if direction == -1:
-                    df[f"{stratName}"] = np.where((df[f"{stratName} Flag"] == 0) & (mask == 0), -1,
-                                                      df[f"{stratName} Flag"])
-                    df[f"{stratName}"] = df[f"{stratName}"].replace(1, 0)
+                    df[f"{stratName}"] = (df[f"{stratName} Flag Final"] - 0.5) / 2
+                    df[f"{stratName}"] = df[f"{stratName}"].apply(
+                        lambda x: round(abs(x)) * sign(x) if not pd.isna(x) else np.nan
+                    )
+                    df[f"{stratName}"] = df[f"{stratName}"].replace(1, 0).replace(-2, -1)
                 else:
-                    df[f"{stratName}"] = np.where((df[f"{stratName} Flag"] == 0) & (mask > 0), 1,
-                                                      df[f"{stratName} Flag"])
+                    df[f"{stratName}"] = (df[f"{stratName} Flag Final"] + 0.5) / 2
+                    df[f"{stratName}"] = df[f"{stratName}"].apply(
+                        lambda x: round(abs(x)) * sign(x) if not pd.isna(x) else np.nan
+                    )
                     df[f"{stratName}"] = df[f"{stratName}"].replace(-1, 0)
                 stratNameList.append(stratName)
         return stratNameList
@@ -362,92 +371,90 @@ class Signal:
         return stratNameList
 
 if __name__ == "__main__":
-    # current_path = Path.cwd()
-    # root = current_path.parent
-    # df = pd.read_csv(os.path.join(root, 'data/raw/ndx-raw.csv'), index_col="Date" ,parse_dates=True)
-    # df.loc[: , ["NDX Index", "NDX Index High", "NDX Index Low"]] = df[[ "NDX Index", "NDX Index High", "NDX Index Low"]].shift(1)
-    # df.index.name = 'date'
-    #
-    # ti = TechnicalIndicator()
-    # me = Metrics()
-    # si = Signal()
-    # ccy = 'KRW'
-    # _max = 0
-    # _maxName = ""
-    # for w in [7, 14, 21]:
-    #     rsi = ti.RSI(df, f'NDX Index', w, method='EMA')
-    #     # adx = ti.ADX(df, 'NDX Index', 'NDX Index High', 'NDX Index Low', 14)
-    #
-    #
-    #     # stratNameList = si.exitRSISignal(df, rsi,range(5,20,2), range(70, 80, 2), [65, 70, 75], [35, 30, 25], momentum=True)
-    #     # stratNameList = si.exitRSISignal(df, rsi,[10], [75], [75], [25])
-    #     # stratNameList = si.enterRSISignal(df, rsi,[10], [75])
-    #     stratNameList = si.enterRSIADXSignal(df, rsi, [42], [68], 'NDX Index',
-    #                                      'NDX Index High', 'NDX Index Low', [14],
-    #                                      [30])
-    #
-    #     for stratName in stratNameList:
-    #         metrics = me.calcAllMetrics(df, 'KRW Curncy', stratName)
-    #         print(metrics['Sharpe'])
-    # # print(_maxName, _max)
-
     current_path = Path.cwd()
     root = current_path.parent
-    if os.path.exists(os.path.join(root, 'data/raw/twd-points.csv')):
-        df = pd.read_csv(os.path.join(root, 'data/raw/twd-points.csv'), parse_dates=['date'])
-    else:
-        fromDate = date(2010, 1, 1)
-        dm = DataMaster()
-        ccy = 'TWD'
+    df = pd.read_csv(os.path.join(root, 'data/raw/ndx-raw.csv'), index_col="Date" ,parse_dates=True)
+    df.loc[: , ["NDX Index", "NDX Index High", "NDX Index Low"]] = df[[ "NDX Index", "NDX Index High", "NDX Index Low"]].shift(1)
+    df.index.name = 'date'
 
-        _df1 = dm.getData(
-            tickers=[
-                f"FX Forward {ccy.upper()}/USD 1m"
-            ],
-            datasetName='FXFORWARDPOINTS_V2_PREMIUM',
-            datasetArgs={
-                'start': fromDate,
-                'pricingLocation': 'HKG'
-            },
-            multiCol=True
-        )
-        _df3 = dm.getData(
-            tickers=[
-                f"FX Forward {ccy.upper()}/USD 3m"
-            ],
-            datasetName='FXFORWARDPOINTS_V2_PREMIUM',
-            datasetArgs={
-                'start': fromDate,
-                'pricingLocation': 'HKG'
-            },
-            multiCol=True
-        )
-
-        _df1 = _df1.rename(columns={'fwdPoints': '1M forwardPoint'})
-        _df3 = _df3.rename(columns={'fwdPoints': '3M forwardPoint'})
-        df = pd.concat([_df1, _df3[['3M forwardPoint']]], axis=1)
-        df[f"{ccy} 1x3 forwardPoint"] = df["3M forwardPoint"] - df["1M forwardPoint"]
-
-        current_path = Path.cwd()
-        root = current_path.parent
-        df.to_csv(os.path.join(root, 'data/raw/twd-points.csv'))
-
-    df.index = pd.to_datetime(df.index)
-    df.sort_index(inplace=True)
-    df.fillna(method='ffill')
-
-    # %%
-    si = Signal()
     ti = TechnicalIndicator()
     me = Metrics()
-    # beforeIMM = si.beforeIMMSignal(df, ccy='TWD', winList=[10], momentum=True)
-    # afterIMM = si.afterIMMSignal(df, ccy='TWD', winList=[10], momentum=False)
-    rsi = ti.RSI(df, "spot", 14, method='EMA')
-    # diveStratList = si.DiveEnterRSISignal(df, rsi, range(15,45,5), range(55,90,5))
-    # diveStratList = si.enterRSISignal(df, rsi, range(15,45,5), range(55,90,5))
-    diveStratList = si.RSITrendSignal(df, rsi, range(15,45,5), range(5,50,5), direction=-1)
-    for s in diveStratList:
-        metrics = me.calcAllMetrics(df, "spot", s)
-        print(metrics['Sharpe'], metrics['MDDVol'], metrics['Hit'], metrics['Active'])
+    si = Signal()
+    ccy = 'KRW'
+    _max = 0
+    _maxName = ""
+    for w in [7, 14, 21]:
+        rsi = ti.RSI(df, f'NDX Index', w, method='EMA')
+        # adx = ti.ADX(df, 'NDX Index', 'NDX Index High', 'NDX Index Low', 14)
+
+
+        # stratNameList = si.exitRSISignal(df, rsi,range(5,20,2), range(70, 80, 2), [65, 70, 75], [35, 30, 25], momentum=True)
+        # stratNameList = si.exitRSISignal(df, rsi,[10],  [75], [75], [25])
+        # stratNameList = si.enterRSISignal(df, rsi,[10], [75])
+        stratNameList = si.RSITrendSignal(df, rsi, range(5,95,10), range(5,95,10), -1)
+
+        for stratName in stratNameList:
+            metrics = me.calcAllMetrics(df, 'KRW Curncy', stratName)
+            print(metrics['Sharpe'])
+    # print(_maxName, _max)
+
+    # current_path = Path.cwd()
+    # root = current_path.parent
+    # if os.path.exists(os.path.join(root, 'data/raw/twd-points.csv')):
+    #     df = pd.read_csv(os.path.join(root, 'data/raw/twd-points.csv'), parse_dates=['date'])
+    # else:
+    #     fromDate = date(2010, 1, 1)
+    #     dm = DataMaster()
+    #     ccy = 'TWD'
+    #
+    #     _df1 = dm.getData(
+    #         tickers=[
+    #             f"FX Forward {ccy.upper()}/USD 1m"
+    #         ],
+    #         datasetName='FXFORWARDPOINTS_V2_PREMIUM',
+    #         datasetArgs={
+    #             'start': fromDate,
+    #             'pricingLocation': 'HKG'
+    #         },
+    #         multiCol=True
+    #     )
+    #     _df3 = dm.getData(
+    #         tickers=[
+    #             f"FX Forward {ccy.upper()}/USD 3m"
+    #         ],
+    #         datasetName='FXFORWARDPOINTS_V2_PREMIUM',
+    #         datasetArgs={
+    #             'start': fromDate,
+    #             'pricingLocation': 'HKG'
+    #         },
+    #         multiCol=True
+    #     )
+    #
+    #     _df1 = _df1.rename(columns={'fwdPoints': '1M forwardPoint'})
+    #     _df3 = _df3.rename(columns={'fwdPoints': '3M forwardPoint'})
+    #     df = pd.concat([_df1, _df3[['3M forwardPoint']]], axis=1)
+    #     df[f"{ccy} 1x3 forwardPoint"] = df["3M forwardPoint"] - df["1M forwardPoint"]
+    #
+    #     current_path = Path.cwd()
+    #     root = current_path.parent
+    #     df.to_csv(os.path.join(root, 'data/raw/twd-points.csv'))
+    #
+    # df.index = pd.to_datetime(df.index)
+    # df.sort_index(inplace=True)
+    # df.fillna(method='ffill')
+    #
+    # # %%
+    # si = Signal()
+    # ti = TechnicalIndicator()
+    # me = Metrics()
+    # # beforeIMM = si.beforeIMMSignal(df, ccy='TWD', winList=[10], momentum=True)
+    # # afterIMM = si.afterIMMSignal(df, ccy='TWD', winList=[10], momentum=False)
+    # rsi = ti.RSI(df, "spot", 14, method='EMA')
+    # # diveStratList = si.DiveEnterRSISignal(df, rsi, range(15,45,5), range(55,90,5))
+    # # diveStratList = si.enterRSISignal(df, rsi, range(15,45,5), range(55,90,5))
+    # diveStratList = si.RSITrendSignal(df, rsi, range(15,45,5), range(5,50,5), direction=-1)
+    # for s in diveStratList:
+    #     metrics = me.calcAllMetrics(df, "spot", s)
+    #     print(metrics['Sharpe'], metrics['MDDVol'], metrics['Hit'], metrics['Active'])
 
 
