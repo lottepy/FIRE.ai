@@ -125,3 +125,21 @@ class TechnicalIndicator:
             indicatorName += "EMA"
             df[indicatorName] = df[colName].ewm(span=win, adjust=False).mean()
         return indicatorName
+
+    def MACD(self, df, colName, win1, win2, signalWin):
+        indicatorName = f'{colName} {win1}MACD'
+        df[indicatorName] = df[colName].ewm(span=win1, adjust=False).mean() - df[colName].ewm(span=win2, adjust=False).mean()
+        df[f'{colName} {win1}Signal'] = df[indicatorName].ewm(span=signalWin, adjust=False).mean()
+        return indicatorName
+
+    def bollingerBand(self, df, colName, win, std):
+        indicatorName = f'{colName} {win}BollingerBand'
+        df[indicatorName] = df[colName].rolling(window=win).mean()
+        df[f'{colName} {win}UpperBand'] = df[indicatorName] + std * df[colName].rolling(window=win).std()
+        df[f'{colName} {win}LowerBand'] = df[indicatorName] - std * df[colName].rolling(window=win).std()
+        return indicatorName
+
+    def autoCorr(self, df, colName, win, lag):
+        indicatorName = f'{colName} {win}Win {lag}AutoCorr'
+        df[indicatorName] = df[colName].rolling(window=win).apply(lambda x: x.autocorr(lag))
+        return indicatorName
