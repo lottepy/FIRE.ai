@@ -137,8 +137,8 @@ class Metrics:
 
     def calcAllMetrics(self, df, instrumentColName1, signalColName1, instrumentColName2=None, signalColName2=None):
         metrics = {}
-        metrics['Daily Rtn'] = df[self.calcDailyRtn(df, instrumentColName1, signalColName1)]
-        metrics['Cum Rtn'] = df[self.calcCumRtn(df, instrumentColName1, signalColName1)]
+        # metrics['Daily Rtn'] = df[self.calcDailyRtn(df, instrumentColName1, signalColName1)]
+        metrics['Total Rtn'] = df[self.calcCumRtn(df, instrumentColName1, signalColName1)].iloc[-1]
         metrics['YTD Rtn'] = self.calcHistYTDPnl(df, instrumentColName1, signalColName1)
         metrics['WTD Rtn'] = self.calcRecentWTDPnl(df, instrumentColName1, signalColName1)
         metrics['MTD Rtn'] = self.calcRecentMTDPnl(df, instrumentColName1, signalColName1)

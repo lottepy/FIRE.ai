@@ -89,6 +89,7 @@ class TechnicalIndicator:
         df[f"{indicatorName} Prev"] = np.where(df[colName1].shift(1) < df[colName2].shift(1), 1, 0)
         df[indicatorName] = np.where(df[colName1] > df[colName2], 1, 0)
         df[indicatorName] *= df[f"{indicatorName} Prev"]
+        df.drop(columns=[f"{indicatorName} Prev"], inplace=True)
         return indicatorName
 
     def crossunder(self, df, colName1, colName2):
@@ -99,6 +100,7 @@ class TechnicalIndicator:
         df[f"{indicatorName} Prev"] = np.where(df[colName1].shift(1) > df[colName2].shift(1), 1, 0)
         df[indicatorName] = np.where(df[colName1] < df[colName2], 1, 0)
         df[indicatorName] *= df[f"{indicatorName} Prev"]
+        df.drop(columns=[f"{indicatorName} Prev"], inplace=True)
         return indicatorName
 
     def monthSeasonality(self, df, longMonList, shortMonList):
