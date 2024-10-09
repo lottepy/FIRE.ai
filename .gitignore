@@ -2,5 +2,9 @@ data/*
 .DS_Store
 constant.py
 systematic/config.py
+systematic/crypto/pwd.txt
 .idea/*
 active/*
+systematic/crypto/filekey.txt
+systematic/crypto/Signal(copy).py
+systematic/crypto/Signal -a -.py
