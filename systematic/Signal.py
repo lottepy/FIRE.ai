@@ -398,5 +398,37 @@ class Signal:
                     df[stratName] = np.where(df[autoCorrColName] > df[f"{autoCorrColName} {rwin}max"], _ * df[f"{stratName} {win}win"], np.where(df[autoCorrColName] < df[f"{autoCorrColName} {rwin}min"], -_ * df[f"{stratName} {win}win"], 0))
                     stratNameList.append(stratName)
         return stratNameList
+
+    def pairLeadMASignal(self, df, colName1, colName2, win1List, win2List, rtnMA=False):
+        stratNameList = []
+        ti = TechnicalIndicator()
+        for w1 in win1List:
+            for w2 in win2List:
+                stratName = f"{colName1} {w1}MA {colName2} {w2}MA"
+                if rtnMA:
+                    df[stratName] = np.where(df[colName1].pct_change().ewm(span=w1, adjust=False).mean() > df[colName2].pct_change().ewm(span=w2, adjust=False).mean(), 1, 0)
+                else:
+                    df[stratName] = np.where(df[colName1].pct_change(w1) > df[colName2].pct_change(w2), 1, 0)
+                stratNameList.append(stratName)
+        if f"{colName1}/{colName2}" not in df.columns:
+            df[f"{colName1}/{colName2}"] = df[colName1] / df[colName2]
+            df[f"{colName1}/{colName2}"] = df[f"{colName1}/{colName2}"].fillna(method='ffill')
+        return stratNameList
+
+    def MACDSignal(self, df, colName, winFastList, winSlowList, winSignalList):
+        ti = TechnicalIndicator()
+        stratNameList = []
+        for wf in winFastList:
+            for ws in winSlowList:
+                for w in winSignalList:
+                    stratName = f"{colName} MACD{wf}-{ws}-{w}"
+                    macd = ti.MACD(df, colName, wf, ws, w)
+                    # df[stratName] = df[macd].rolling(3).apply(lambda x: x.replace(to_replace=0, method='ffill')[-1])
+                    df['Flag'] = df[macd]
+                    df.loc[df.index[0], f"Flag"] = np.nan
+                    df[stratName] = df["Flag"].replace(to_replace=0, method='ffill')
+                    stratNameList.append(stratName)
+        return stratNameList
+
 if __name__ == "__main__":
     pass

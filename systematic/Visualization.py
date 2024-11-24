@@ -32,7 +32,7 @@ class Visualization:
         ax2, ax4 = ax1.twinx(), ax3.twinx()
 
         df['^'] = np.where(df[f"{stratName}"] > 0, df[instrumentColName], np.nan)
-        df['v'] = np.where(df[f"{stratName}"] > 0, df[instrumentColName], np.nan)
+        df['v'] = np.where(df[f"{stratName}"] < 0, df[instrumentColName], np.nan)
 
         ytd = df.tail(int((date.today() - date(date.today().year, 1,1)).days))
         ytd[[instrumentColName]].plot(color='orange', label=instrumentColName, ax=ax1)

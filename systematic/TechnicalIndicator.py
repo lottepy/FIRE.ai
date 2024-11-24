@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import os
 from pathlib import Path
-
+from utils import sign
 import matplotlib.pyplot as plt
 
 class TechnicalIndicator:
@@ -128,10 +128,17 @@ class TechnicalIndicator:
             df[indicatorName] = df[colName].ewm(span=win, adjust=False).mean()
         return indicatorName
 
-    def MACD(self, df, colName, win1, win2, signalWin):
-        indicatorName = f'{colName} {win1}MACD'
-        df[indicatorName] = df[colName].ewm(span=win1, adjust=False).mean() - df[colName].ewm(span=win2, adjust=False).mean()
-        df[f'{colName} {win1}Signal'] = df[indicatorName].ewm(span=signalWin, adjust=False).mean()
+    def MACD(self, df, colName, winFast, winSlow, win):
+        indicatorName = f'{colName} MACD{winFast}-{winSlow}'
+        df[f"{colName} MACD" ] = df[colName].ewm(span=winFast, adjust=False).mean() - df[colName].ewm(span=winSlow, adjust=False).mean()
+        df[f"{colName} MACD-Signal" ] = df[f"{colName} MACD"].ewm(span=win, adjust=False).mean()
+        co = self.crossover(df, f"{colName} MACD", f"{colName} MACD-Signal")
+        cu = self.crossunder(df, f"{colName} MACD", f"{colName} MACD-Signal")
+
+        df[f"{indicatorName}"] = df[co] - df[cu]
+        # df["Flag Dummy"] = df[f"Flag"]
+        # df.loc[df.index[0], f"Flag Dummy"] = np.nan
+        # df[f"{indicatorName}"] = df["Flag Dummy"].replace(to_replace=0, method='ffill')
         return indicatorName
 
     def bollingerBand(self, df, colName, win, std):
@@ -144,4 +151,20 @@ class TechnicalIndicator:
     def autoCorr(self, df, colName, win, lag):
         indicatorName = f'{colName} {win}Win {lag}AutoCorr'
         df[indicatorName] = df[colName].rolling(window=win).apply(lambda x: x.autocorr(lag))
+        return indicatorName
+
+    def syncSign(self, df, colName1, colName2, win):
+        indicatorName = f'{colName1}-{colName2} {win}Sync'
+        df[indicatorName] = np.where(df[colName1].pct_cahnge(win) * df[colName2].pct_change(win) > 0, 1, 0)
+        return indicatorName
+
+    def syncContinuousSign(self, df, colName1, colName2, win):
+        indicatorName = f'{colName1}-{colName2} {win}SyncContinuous'
+        df[indicatorName] = np.where(df[colName1].pct_cahnge() * df[colName2].pct_change() > 0, 1, 0)
+        df[indicatorName] = df[indicatorName].rolling(window=win).sum().eq(win).astype(int)
+        return indicatorName
+
+    def leadSign(self, df, colName1, colName2, win):
+        indicatorName = f'{colName1}-{colName2} {win}Lead'
+        df[indicatorName] = np.where(df[colName1].pct_change(win) >= df[colName2].shift(win), 1, 2)
         return indicatorName
